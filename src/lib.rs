@@ -72,9 +72,14 @@ impl HyperLogLog {
 
     fn rho(&self, w: u64) -> u8 {
         if w == 0 {
-            (64 - self.b + 1) as u8
+            (64 - self.b) + 1
         } else {
-            (w.leading_zeros() + 1) as u8
+            // leading_zeros() counts zeros in the full 64-bit representation
+            // We extracted w to be at most (64-b) bits, so we need to adjust
+            // ρ(w) = position of first 1-bit in the (64-b) bit value
+            let leading_zeros_full = w.leading_zeros() as u8;
+            let leading_zeros_in_w = leading_zeros_full - self.b; // Remove leading zeros from bits above w
+            (leading_zeros_in_w + 1) as u8
         }
     }
 
@@ -114,5 +119,123 @@ impl HyperLogLog {
         let mut hasher = DefaultHasher::new();
         item.hash(&mut hasher);
         hasher.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_cardinality_with_random_ids() {
+        // Test with various cardinalities to ensure accuracy
+        let test_cases = vec![100, 1000, 10000, 100000];
+
+        for num_elements in test_cases {
+            // Generate random IDs and track actual distinct count
+            let mut actual_distinct = HashSet::new();
+            let mut hll = HyperLogLog::new();
+
+            for i in 0..num_elements {
+                actual_distinct.insert(i);
+                hll.add(&i);
+            }
+
+            let actual_count = actual_distinct.len() as f64;
+            let estimated_count = hll.cardinality();
+            let error_percent = ((estimated_count - actual_count).abs() / actual_count) * 100.0;
+
+            println!(
+                "Elements: {}, Actual: {}, Estimated: {:.2}, Error: {:.2}%",
+                num_elements, actual_count, estimated_count, error_percent
+            );
+
+            // HyperLogLog should be within ~2% error for large cardinalities
+            // For smaller cardinalities, allow higher error
+            let acceptable_error = if num_elements < 1000 {
+                20.0
+            } else {
+                5.0
+            };
+
+            assert!(
+                error_percent < acceptable_error,
+                "Error {:.2}% exceeds acceptable threshold {:.2}% for {} elements",
+                error_percent,
+                acceptable_error,
+                num_elements
+            );
+        }
+    }
+
+    #[test]
+    fn test_cardinality_with_duplicates() {
+        // Add the same element multiple times and verify cardinality stays the same
+        let mut hll = HyperLogLog::new();
+        let mut actual_distinct = HashSet::new();
+
+        let unique_elements = 1000;
+        let repetitions = 10;
+
+        for i in 0..unique_elements {
+            for _ in 0..repetitions {
+                hll.add(&i);
+                actual_distinct.insert(i);
+            }
+        }
+
+        let actual_count = actual_distinct.len() as f64;
+        let estimated_count = hll.cardinality();
+        let error_percent = ((estimated_count - actual_count).abs() / actual_count) * 100.0;
+
+        println!(
+            "Duplicates Test - Actual: {}, Estimated: {:.2}, Error: {:.2}%",
+            actual_count, estimated_count, error_percent
+        );
+
+        assert!(
+            error_percent < 5.0,
+            "Error {:.2}% exceeds threshold with duplicates",
+            error_percent
+        );
+    }
+
+    #[test]
+    fn test_merge() {
+        // Create two HyperLogLogs with non-overlapping data
+        let mut hll1 = HyperLogLog::new();
+        let mut hll2 = HyperLogLog::new();
+        let mut actual_distinct = HashSet::new();
+
+        // Add 500 elements to hll1
+        for i in 0..500 {
+            hll1.add(&i);
+            actual_distinct.insert(i);
+        }
+
+        // Add different 500 elements to hll2
+        for i in 500..1000 {
+            hll2.add(&i);
+            actual_distinct.insert(i);
+        }
+
+        // Merge hll2 into hll1
+        hll1.merge(&hll2);
+
+        let actual_count = actual_distinct.len() as f64;
+        let estimated_count = hll1.cardinality();
+        let error_percent = ((estimated_count - actual_count).abs() / actual_count) * 100.0;
+
+        println!(
+            "Merge Test - Actual: {}, Estimated: {:.2}, Error: {:.2}%",
+            actual_count, estimated_count, error_percent
+        );
+
+        assert!(
+            error_percent < 5.0,
+            "Error {:.2}% exceeds threshold after merge",
+            error_percent
+        );
     }
 }

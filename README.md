@@ -27,3 +27,12 @@ initialize m registers M[1..m] to 0
 ```
 
 [Link to paper](https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf)
+
+## Test Results
+
+| Elements | Actual Distinct | Estimated | Error |
+|----------|-----------------|-----------|-------|
+| 100      | 100             | 100.31    | 0.31% |
+| 1,000    | 1,000           | 999.90    | 0.01% |
+| 10,000   | 10,000          | 9,972.65  | 0.27% |
+| 100,000  | 100,000         | 101,268.10| 1.27% |
